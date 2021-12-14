@@ -4,14 +4,12 @@ import (
     "os"
     "log"
     "fmt"
-    "time"
     "context"
     "net/url"
     "net/http"
 
     "github.com/gorilla/mux"
     "github.com/auth0/go-jwt-middleware/v2"
-    "github.com/auth0/go-jwt-middleware/v2/jwks"
     "github.com/auth0/go-jwt-middleware/v2/validator"
 )
 
@@ -26,6 +24,25 @@ func (c CustomClaims) Validate(ctx context.Context) error {
 }
 
 func main() {
+    handleRouts()
+}
+
+func handleRouts() {
+    host := os.Getenv("HOST")
+    port := os.Getenv("PORT")
+
+    middleware := getMiddleware()
+
+    router := mux.NewRouter()
+    router.Handle("/api/public", getPublicMessage())
+    router.Handle("/api/private", middleware.CheckJWT(getPrivateMessage()))
+
+    log.Printf("server started and listening on http://%s:%s", host, port)
+
+    http.ListenAndServe(host+":"+port, router)
+}
+
+func getMiddleware() *jwtmiddleware.JWTMiddleware {
 
     issuerURL, err := url.Parse("https://dev-k18jl6aj.us.auth0.com/")
 
@@ -33,15 +50,16 @@ func main() {
         log.Fatalf("failed to parse the issuer url: %v", err)
     }
 
-    provider := jwks.NewCachingProvider(issuerURL, 5*time.Minute)
+    keyFunc := func(ctx context.Context) (interface{}, error) {
+        return []byte("XaJzKyFuoImgOwNUMQMiJDZsvPXv7hu2"), nil
+    }
 
     jwtValidator, err := validator.New(
-        provider.KeyFunc,
-        validator.RS256,
+        keyFunc,
+        validator.HS256,
         issuerURL.String(),
-        []string{"https://ruben/"},
-        // validator.WithCustomClaims(&CustomClaims{}),
-        // validator.WithAllowedClockSkew(time.Minute),
+        []string{"https://dune/"},
+        validator.WithCustomClaims(&CustomClaims{}),
     )
 
     if err != nil {
@@ -57,17 +75,7 @@ func main() {
         jwtmiddleware.WithErrorHandler(errorHandler),
     )
 
-    // Gateway API starts here
-    host := os.Getenv("HOST")
-    port := os.Getenv("PORT")
-
-    router := mux.NewRouter()
-    router.Handle("/api/public", getPublicMessage())
-    router.Handle("/api/private", middleware.CheckJWT(getPrivateMessage()))
-
-    log.Printf("server started and listening on http://%s:%s", host, port)
-
-    http.ListenAndServe(host+":"+port, router)
+    return middleware
 }
 
 func getPublicMessage() http.Handler {
@@ -80,7 +88,7 @@ func getPublicMessage() http.Handler {
 
 func getPrivateMessage() http.Handler {
     fn := func(w http.ResponseWriter, r *http.Request) {
-        body := fmt.Sprintf("Public message")
+        body := fmt.Sprintf("Private fucking message")
         w.Write([]byte(body))
     }
     return http.HandlerFunc(fn)
